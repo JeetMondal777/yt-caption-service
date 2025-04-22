@@ -70,7 +70,8 @@ app.post('/api/extract-captions', async (req, res) => {
     if (!captions || captions.length === 0) {
       return res.status(404).json({ error: 'No captions found' });
     }
-
+    console.log(captions);
+    
     res.json(captions);
 
   } catch (err) {
