@@ -3,7 +3,9 @@ const youtubeCaptions = require("youtube-captions-scraper");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin:process.env.CLIENT_URL,
+}));
 
 // Middleware to parse JSON request bodies
 app.use(express.json()); // This will parse the incoming JSON data
