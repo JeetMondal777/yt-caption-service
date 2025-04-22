@@ -1,54 +1,81 @@
-const express = require("express");
-const youtubeCaptions = require("youtube-captions-scraper");
-const cors = require("cors");
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const youtubeCaptions = require('youtube-captions-scraper');
+require('dotenv').config();
 
 const app = express();
+
 app.use(cors({
-    origin:process.env.CLIENT_URL,
+    origin: process.env.CLIENT_URL,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
 }));
+app.use(express.json());
 
-// Middleware to parse JSON request bodies
-app.use(express.json()); // This will parse the incoming JSON data
-
-// Function to extract video ID from YouTube URL
-const extractVideoId = (url) => {
-  const regex = /(?:https?:\/\/(?:www\.)?youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S+?[\?&]v=)([a-zA-Z0-9_-]{11}))|(?:https?:\/\/(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11}))/;
-  const match = url.match(regex);
-  return match ? match[1] || match[2] : null;
-};
-
-// Route to get captions using YouTube video URL
-app.post('/captions', async (req, res) => {
+app.post('/api/extract-captions', async (req, res) => {
   const { videoUrl } = req.body;
+  const videoId = extractVideoID(videoUrl);
 
-  if (!videoUrl) {
-    return res.status(400).json({ error: 'Missing YouTube URL' });
-  }
-
-  const videoId = extractVideoId(videoUrl);
   if (!videoId) {
     return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
   try {
-    // Fetch captions for the given video ID
-    const captions = await youtubeCaptions.getSubtitles({
-      videoID: videoId,
-      lang: 'en'  // You can specify other languages as well
-    });
-
-    // Check if captions exist
-    if (!captions || captions.length === 0) {
-      return res.status(404).json({ error: 'No captions found for this video' });
+    const captions = await getCaptions(videoId);
+    if (!captions) {
+      return res.status(404).json({ error: 'No captions available for this video' });
     }
-
-    // Send back the captions
-    res.json(captions);
+    
+    console.log(captions);  // For debugging
+    res.status(200).json({ transcript: captions });
   } catch (err) {
-    console.error("Error fetching captions:", err);
-    res.status(500).json({ error: 'Failed to fetch captions', details: err.message });
+    console.error('Error extracting captions:', err.message);
+    res.status(500).json({ error: 'Failed to extract captions' });
   }
 });
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Microservice running on port ${PORT}`));
+function extractVideoID(url) {
+  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/;
+  const match = url.match(regex);
+  return match ? match[1] : null;
+}
+
+async function getCaptions(videoId) {
+  try {
+    // Fetch page content using ScraperAPI
+    const proxyUrl = `http://api.scraperapi.com?api_key=${process.env.SCRAPER_API_KEY}&url=https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Logging the proxy URL and response to verify
+    console.log(`Fetching data from: ${proxyUrl}`);
+    
+    const response = await axios.get(proxyUrl);
+    console.log('ScraperAPI Response:', response.data);  // Check if the response is HTML
+
+    // If ScraperAPI response is good, fetch captions
+    const captionData = await youtubeCaptions.getSubtitles({
+      videoID: videoId,
+      lang: 'en',
+    });
+
+    if (!captionData || captionData.length === 0) {
+      throw new Error('No captions found');
+    }
+
+    const transcript = captionData.map(caption => caption.text).join(' ');
+    return transcript;
+  } catch (err) {
+    // Log the error for debugging
+    console.error('Error fetching captions:', err);
+    throw new Error('Failed to fetch captions from YouTube');
+  }
+}
+
+app.get('/', (req, res) => {
+  res.send('Hello World!');
+});
+
+app.listen(3000, () => {
+  console.log('Server is running on port 3000');
+});
